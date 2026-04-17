@@ -1,0 +1,14 @@
+agno
+fastapi
+uvicorn
+python-dotenv
+lancedb
+tantivy
+sqlalchemy
+aiosqlite
+boto3
+psycopg2-binary
+pandas
+jsonschema
+pyyaml
+pytest
