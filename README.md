@@ -88,6 +88,20 @@ python reindex.py          # incremental (skip existing)
 python reindex.py --fresh  # wipe and rebuild
 ```
 
+## External Dependencies
+
+This repo is **not fully self-contained**. The toolkits expect the SQL Librarian Engine v1 to exist as a sibling directory:
+
+```
+parent-folder/
+  engines/sql-librarian-engine-v1/   # playbooks/ + schemas/
+  mops-bot-knowledge-lab/            # this repo
+```
+
+All 4 toolkits read from `playbooks/` (INDEX.json, playbook folders). PlaybookWriteTools also reads `schemas/playbook-schema.json` for validation. The paths are configurable via `PLAYBOOKS_DIR` and `LIBRARIAN_ENGINE_DIR` env vars.
+
+**Risk: dual-write divergence.** If the Knowledge Lab's SQL Librarian agent and the Claude Code SQL Librarian agent (`MOPS.BOT/.claude/agents/librarian-engine-v1.md`) both write to the same playbooks directory, they share a single source of truth. If they're pointed at different directories, playbooks will diverge silently. When the Knowledge Lab fully replaces the Claude Code agents, consider copying playbooks into this repo to make it self-contained.
+
 ## Tests
 
 ```bash
