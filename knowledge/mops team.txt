@@ -1,0 +1,8 @@
+MOPS = market operation specialist 
+mops team members:
+Max - the great boss
+Ross
+Nick 
+Hayden
+Rohan 
+Fran 
