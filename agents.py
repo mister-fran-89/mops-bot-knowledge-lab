@@ -13,25 +13,20 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from agno.agent import Agent
 from agno.models.aws import Claude
-from agno.knowledge.knowledge import Knowledge
-from agno.knowledge.embedder.ollama import OllamaEmbedder
-from agno.vectordb.lancedb.lance_db import LanceDb
 from agno.db.sqlite import SqliteDb
 from agno.db.base import SessionType
 from agno.memory.manager import MemoryManager
 
-from toolkits import PlaybookSearchTools, SQLExecutionTools, SQLComparisonTools, PlaybookWriteTools
+from toolkits import PlaybookSearchTools, SQLExecutionTools, SQLComparisonTools, PlaybookWriteTools, KnowledgeSearchTools
 
 # ── Config ─────────────────────────────────────────────────────────────────────
-_BEDROCK_MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "us.anthropic.claude-sonnet-4-20250514-v1:0")
+_BEDROCK_MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "arn:aws:bedrock:us-west-2:865009241861:application-inference-profile/z70ddxx44mm7")
 _AWS_REGION = os.getenv("AWS_REGION", "us-west-2")
 _BEDROCK_GUARDRAIL_ID = os.getenv("BEDROCK_GUARDRAIL_ID", "")
 _BEDROCK_GUARDRAIL_VERSION = os.getenv("BEDROCK_GUARDRAIL_VERSION", "")
-_OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 _USER_ID = os.getenv("USER_ID", "mops")
 
 _SQLITE_DB = os.getenv("SQLITE_DB", "./data/mops.db")
-_LANCEDB_URI = os.getenv("LANCEDB_URI", "./data/lancedb")
 _PLAYBOOKS_DIR = os.getenv("PLAYBOOKS_DIR", "../engines/sql-librarian-engine-v1/playbooks")
 _LIBRARIAN_ENGINE_DIR = os.getenv("LIBRARIAN_ENGINE_DIR", "../engines/sql-librarian-engine-v1")
 _KNOWLEDGE_DIR = os.getenv("KNOWLEDGE_DIR", "./knowledge")
@@ -41,7 +36,7 @@ _DB_ID = "local"
 # Ensure data directory exists
 Path(_SQLITE_DB).parent.mkdir(parents=True, exist_ok=True)
 
-# ── Model ────────────────────────────────────────────────────────────────────
+# ── Models ───────────────────────────────────────────────────────────────────
 _model_kwargs: dict[str, Any] = {"id": _BEDROCK_MODEL_ID, "aws_region": _AWS_REGION}
 if _BEDROCK_GUARDRAIL_ID:
     _model_kwargs["request_params"] = {
@@ -52,39 +47,30 @@ if _BEDROCK_GUARDRAIL_ID:
     }
 _model = Claude(**_model_kwargs)
 
+_HAIKU_MODEL_ID = os.getenv("BEDROCK_HAIKU_MODEL_ID", "us.anthropic.claude-haiku-4-5-20251001-v1:0")
+_haiku_model = Claude(id=_HAIKU_MODEL_ID, aws_region=_AWS_REGION)
+
 # ── Persistent DB (sessions + memories) ───────────────────────────────────────
 _db = SqliteDb(db_file=_SQLITE_DB)
 
-# ── Knowledge base (RAG — LanceDB + nomic-embed-text) ─────────────────────────
-_embedder = OllamaEmbedder(
-    id="nomic-embed-text",
-    host=_OLLAMA_HOST,
-    dimensions=768,
-)
-_vdb = LanceDb(
-    uri=_LANCEDB_URI,
-    table_name="mops_knowledge",
-    embedder=_embedder,
-)
-_knowledge = Knowledge(vector_db=_vdb, max_results=20)
-
 # ── Toolkits ──────────────────────────────────────────────────────────────────
+_knowledge_tools = KnowledgeSearchTools(knowledge_dir=_KNOWLEDGE_DIR)
 _search_tools = PlaybookSearchTools(playbooks_dir=_PLAYBOOKS_DIR)
 _exec_tools = SQLExecutionTools(playbooks_dir=_PLAYBOOKS_DIR, results_dir=_RESULTS_DIR)
 _compare_tools = SQLComparisonTools(playbooks_dir=_PLAYBOOKS_DIR)
 _write_tools = PlaybookWriteTools(engine_dir=_LIBRARIAN_ENGINE_DIR, playbooks_dir=_PLAYBOOKS_DIR)
 
 # ── Memory manager ────────────────────────────────────────────────────────────
-_memory_manager = MemoryManager(model=_model, db=_db)
+_memory_manager = MemoryManager(model=_haiku_model, db=_db)
 
 # ── Agent instructions ────────────────────────────────────────────────────────
 _ORCHESTRATOR_INSTRUCTIONS = [
     "You are the MOPS Assistant — a knowledge hub for the MOPS team.",
-    "Search your knowledge base first when answering questions about MOPS processes, playbooks, or domain topics.",
+    "MANDATORY: For ANY question about people, team, processes, or domain topics, you MUST call search_knowledge FIRST before responding. Do NOT answer from memory alone — always verify against knowledge files. Include ALL information returned by the tool in your response.",
     "For playbook lookups, use PlaybookSearchTools: search_index for fast lookup, search_playbooks_deep for detailed field search.",
     "For SQL execution, use SQLExecutionTools: list_playbooks to help users find scripts, run_query or run_playbook to execute.",
     "Be concise and direct. Present data as tables when appropriate.",
-    "You have persistent memory — remember facts users tell you across conversations.",
+    "You have persistent memory — remember facts users tell you across conversations. But knowledge files are the source of truth — if they contradict memory, trust the files.",
 ]
 
 _ARCHIVIST_INSTRUCTIONS = [
@@ -128,9 +114,7 @@ _agents["mops-assistant"] = Agent(
     model=_model,
     description="MOPS team knowledge assistant — ask about processes, playbooks, run SQL, search docs.",
     instructions=_ORCHESTRATOR_INSTRUCTIONS,
-    knowledge=_knowledge,
-    search_knowledge=True,
-    tools=[_search_tools, _exec_tools],
+    tools=[_search_tools, _exec_tools, _knowledge_tools],
     db=_db,
     user_id=_USER_ID,
     memory_manager=_memory_manager,
@@ -293,9 +277,9 @@ async def agent_run(
 
     sid = session_id if session_id else None
 
-    def _stream():
+    async def _stream():
         try:
-            for event in agent.run(
+            async for event in agent.arun(
                 message,
                 stream=True,
                 stream_events=True,

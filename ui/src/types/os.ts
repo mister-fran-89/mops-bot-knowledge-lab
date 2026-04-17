@@ -214,6 +214,7 @@ export interface ChatMessage {
 export interface AgentDetails {
   id: string
   name?: string
+  description?: string
   db_id?: string
   // Model
   model?: Model

@@ -43,6 +43,8 @@ interface Store {
   ) => void
   isSessionsLoading: boolean
   setIsSessionsLoading: (isSessionsLoading: boolean) => void
+  memoryStatus: 'saving' | 'saved' | null
+  setMemoryStatus: (status: 'saving' | 'saved' | null) => void
 }
 
 export const useStore = create<Store>()(
@@ -87,7 +89,9 @@ export const useStore = create<Store>()(
         })),
       isSessionsLoading: false,
       setIsSessionsLoading: (isSessionsLoading) =>
-        set(() => ({ isSessionsLoading }))
+        set(() => ({ isSessionsLoading })),
+      memoryStatus: null,
+      setMemoryStatus: (memoryStatus) => set(() => ({ memoryStatus }))
     }),
     {
       name: 'endpoint-storage',

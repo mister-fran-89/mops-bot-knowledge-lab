@@ -23,6 +23,7 @@ const useAIChatStreamHandler = () => {
     (state) => state.setStreamingErrorMessage
   )
   const setIsStreaming = useStore((state) => state.setIsStreaming)
+  const setMemoryStatus = useStore((state) => state.setMemoryStatus)
   const setSessionsData = useStore((state) => state.setSessionsData)
   const { streamResponse } = useAIResponseStream()
 
@@ -337,10 +338,16 @@ const useAIChatStreamHandler = () => {
               }
             } else if (
               chunk.event === RunEvent.UpdatingMemory ||
-              chunk.event === RunEvent.TeamMemoryUpdateStarted ||
+              chunk.event === RunEvent.MemoryUpdateStarted ||
+              chunk.event === RunEvent.TeamMemoryUpdateStarted
+            ) {
+              setMemoryStatus('saving')
+            } else if (
+              chunk.event === RunEvent.MemoryUpdateCompleted ||
               chunk.event === RunEvent.TeamMemoryUpdateCompleted
             ) {
-              // No-op for now; could surface a lightweight UI indicator in the future
+              setMemoryStatus('saved')
+              setTimeout(() => setMemoryStatus(null), 2000)
             } else if (
               chunk.event === RunEvent.RunCompleted ||
               chunk.event === RunEvent.TeamRunCompleted
@@ -431,6 +438,7 @@ const useAIChatStreamHandler = () => {
       mode,
       setStreamingErrorMessage,
       setIsStreaming,
+      setMemoryStatus,
       focusChatInput,
       setSessionsData,
       sessionId,

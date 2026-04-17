@@ -11,8 +11,11 @@ import {
   Reference
 } from '@/types/os'
 import React, { type FC } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { Check } from 'lucide-react'
 
 import Icon from '@/components/ui/icon'
+import { useStore } from '@/store'
 import ChatBlankState from './ChatBlankState'
 
 interface MessageListProps {
@@ -151,6 +154,34 @@ const ToolComponent = memo(({ tools }: ToolCallProps) => (
   </div>
 ))
 ToolComponent.displayName = 'ToolComponent'
+
+const MemoryIndicator = () => {
+  const memoryStatus = useStore((state) => state.memoryStatus)
+
+  return (
+    <AnimatePresence>
+      {memoryStatus && (
+        <motion.div
+          initial={{ opacity: 0, y: 4 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+          className="flex items-center gap-1.5 pl-9 text-xs text-muted"
+        >
+          {memoryStatus === 'saving' ? (
+            <span className="animate-pulse">Remembering...</span>
+          ) : (
+            <span className="flex items-center gap-1">
+              <Check size={12} />
+              Memory saved
+            </span>
+          )}
+        </motion.div>
+      )}
+    </AnimatePresence>
+  )
+}
+
 const Messages = ({ messages }: MessageListProps) => {
   if (messages.length === 0) {
     return <ChatBlankState />
@@ -173,6 +204,7 @@ const Messages = ({ messages }: MessageListProps) => {
         }
         return <UserMessage key={key} message={message} />
       })}
+      <MemoryIndicator />
     </>
   )
 }

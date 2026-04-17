@@ -1,9 +1,10 @@
 'use client'
 
-import { FC, useState } from 'react'
+import { FC, useState, ReactElement, isValidElement } from 'react'
 
 import Image from 'next/image'
 import Link from 'next/link'
+import { Clipboard, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 import type {
@@ -30,7 +31,6 @@ import type {
   PreparedTextProps
 } from './types'
 
-import { HEADING_SIZES } from '../Heading/constants'
 import { PARAGRAPH_SIZES } from '../Paragraph/constants'
 
 const filterProps = (props: object) => {
@@ -129,6 +129,58 @@ const InlineCode: FC<PreparedTextProps> = ({ children }) => {
   )
 }
 
+const CodeBlock: FC<PreparedTextProps> = ({ children }) => {
+  const [copied, setCopied] = useState(false)
+
+  let language = ''
+  let codeText = ''
+
+  if (isValidElement(children)) {
+    const child = children as ReactElement<{ className?: string; children?: string }>
+    const className = child.props?.className || ''
+    const match = className.match(/language-(\w+)/)
+    if (match) language = match[1]
+    codeText = String(child.props?.children || '')
+  } else {
+    codeText = String(children || '')
+  }
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(codeText.replace(/\n$/, ''))
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  return (
+    <div className="group relative rounded-lg border border-border bg-background-secondary">
+      <div className="flex items-center justify-between px-4 py-2">
+        <span className="font-dmmono text-xs uppercase text-muted">
+          {language || 'code'}
+        </span>
+        <button
+          onClick={handleCopy}
+          className="flex items-center gap-1 text-xs text-muted transition-colors hover:text-primary"
+        >
+          {copied ? (
+            <>
+              <Check size={14} />
+              <span>Copied</span>
+            </>
+          ) : (
+            <>
+              <Clipboard size={14} />
+              <span>Copy</span>
+            </>
+          )}
+        </button>
+      </div>
+      <pre className="overflow-x-auto px-4 pb-4">
+        <code className="font-dmmono text-xs leading-relaxed">{codeText}</code>
+      </pre>
+    </div>
+  )
+}
+
 const Blockquote = ({ className, ...props }: BlockquoteProps) => (
   <blockquote
     className={cn(className, 'italic', PARAGRAPH_SIZES.body)}
@@ -146,33 +198,27 @@ const AnchorLink = ({ className, ...props }: AnchorLinkProps) => (
 )
 
 const Heading1 = ({ className, ...props }: HeadingProps) => (
-  <h1 className={cn(className, HEADING_SIZES[3])} {...filterProps(props)} />
+  <h1 className={cn(className, 'text-lg font-semibold font-inter')} {...filterProps(props)} />
 )
 
 const Heading2 = ({ className, ...props }: HeadingProps) => (
-  <h2 className={cn(className, HEADING_SIZES[3])} {...filterProps(props)} />
+  <h2 className={cn(className, 'text-base font-semibold font-inter')} {...filterProps(props)} />
 )
 
 const Heading3 = ({ className, ...props }: HeadingProps) => (
-  <h3 className={cn(className, PARAGRAPH_SIZES.lead)} {...filterProps(props)} />
+  <h3 className={cn(className, 'text-sm font-semibold font-inter')} {...filterProps(props)} />
 )
 
 const Heading4 = ({ className, ...props }: HeadingProps) => (
-  <h4 className={cn(className, PARAGRAPH_SIZES.lead)} {...filterProps(props)} />
+  <h4 className={cn(className, 'text-sm font-semibold font-inter')} {...filterProps(props)} />
 )
 
 const Heading5 = ({ className, ...props }: HeadingProps) => (
-  <h5
-    className={cn(className, PARAGRAPH_SIZES.title)}
-    {...filterProps(props)}
-  />
+  <h5 className={cn(className, 'text-sm font-medium font-inter')} {...filterProps(props)} />
 )
 
 const Heading6 = ({ className, ...props }: HeadingProps) => (
-  <h6
-    className={cn(className, PARAGRAPH_SIZES.title)}
-    {...filterProps(props)}
-  />
+  <h6 className={cn(className, 'text-sm font-medium font-inter')} {...filterProps(props)} />
 )
 
 const Img = ({ src, alt }: ImgProps) => {
@@ -209,7 +255,7 @@ const Img = ({ src, alt }: ImgProps) => {
 }
 
 const Table = ({ className, ...props }: TableProps) => (
-  <div className="w-full max-w-[560px] overflow-hidden rounded-md border border-border">
+  <div className="w-full max-w-full overflow-hidden rounded-md border border-border">
     <div className="w-full overflow-x-auto">
       <table className={cn(className, 'w-full')} {...filterProps(props)} />
     </div>
@@ -268,6 +314,7 @@ export const components = {
   del: DeletedText,
   hr: HorizontalRule,
   blockquote: Blockquote,
+  pre: CodeBlock,
   code: InlineCode,
   a: AnchorLink,
   img: Img,

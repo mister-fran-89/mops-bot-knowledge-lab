@@ -1,5 +1,6 @@
 import type { Config } from 'tailwindcss'
 import tailwindcssAnimate from 'tailwindcss-animate'
+import typography from '@tailwindcss/typography'
 
 export default {
   darkMode: ['class'],
@@ -31,8 +32,28 @@ export default {
       },
       borderRadius: {
         xl: '10px'
+      },
+      typography: {
+        DEFAULT: {
+          css: {
+            '--tw-prose-body': '#FAFAFA',
+            '--tw-prose-headings': '#FAFAFA',
+            '--tw-prose-bold': '#FAFAFA',
+            '--tw-prose-links': '#FAFAFA',
+            '--tw-prose-code': '#FAFAFA',
+            '--tw-prose-counters': '#A1A1AA',
+            '--tw-prose-bullets': '#A1A1AA',
+            '--tw-prose-hr': 'rgba(255, 255, 255, 0.2)',
+            '--tw-prose-th-borders': 'rgba(255, 255, 255, 0.2)',
+            '--tw-prose-td-borders': 'rgba(255, 255, 255, 0.2)',
+            '--tw-prose-pre-bg': '#27272A',
+            '--tw-prose-pre-code': '#FAFAFA',
+            '--tw-prose-quotes': '#A1A1AA',
+            '--tw-prose-quote-borders': 'rgba(255, 255, 255, 0.2)',
+          }
+        }
       }
     }
   },
-  plugins: [tailwindcssAnimate]
+  plugins: [tailwindcssAnimate, typography]
 } satisfies Config
