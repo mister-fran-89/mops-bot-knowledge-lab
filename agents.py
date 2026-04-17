@@ -25,6 +25,8 @@ from toolkits import PlaybookSearchTools, SQLExecutionTools, SQLComparisonTools,
 # ── Config ─────────────────────────────────────────────────────────────────────
 _BEDROCK_MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "us.anthropic.claude-sonnet-4-20250514-v1:0")
 _AWS_REGION = os.getenv("AWS_REGION", "us-west-2")
+_BEDROCK_GUARDRAIL_ID = os.getenv("BEDROCK_GUARDRAIL_ID", "")
+_BEDROCK_GUARDRAIL_VERSION = os.getenv("BEDROCK_GUARDRAIL_VERSION", "")
 _OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 _USER_ID = os.getenv("USER_ID", "mops")
 
@@ -40,7 +42,15 @@ _DB_ID = "local"
 Path(_SQLITE_DB).parent.mkdir(parents=True, exist_ok=True)
 
 # ── Model ────────────────────────────────────────────────────────────────────
-_model = Claude(id=_BEDROCK_MODEL_ID, aws_region=_AWS_REGION)
+_model_kwargs: dict[str, Any] = {"id": _BEDROCK_MODEL_ID, "aws_region": _AWS_REGION}
+if _BEDROCK_GUARDRAIL_ID:
+    _model_kwargs["request_params"] = {
+        "extra_headers": {
+            "X-Amzn-Bedrock-GuardrailIdentifier": _BEDROCK_GUARDRAIL_ID,
+            "X-Amzn-Bedrock-GuardrailVersion": _BEDROCK_GUARDRAIL_VERSION or "1",
+        }
+    }
+_model = Claude(**_model_kwargs)
 
 # ── Persistent DB (sessions + memories) ───────────────────────────────────────
 _db = SqliteDb(db_file=_SQLITE_DB)
