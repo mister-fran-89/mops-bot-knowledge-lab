@@ -23,12 +23,12 @@ export const viewport: Viewport = {
 }
 
 export const metadata: Metadata = {
-  title: 'FranLab AI',
-  description: 'FranLab personal AI agent',
+  title: 'MOPS Knowledge Lab',
+  description: 'MOPS team knowledge assistant',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
-    title: 'FranLab AI',
+    title: 'MOPS Knowledge Lab',
   },
 }
 

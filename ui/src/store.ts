@@ -8,21 +8,13 @@ import {
   type ChatMessage
 } from '@/types/os'
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:7777'
+
 interface Store {
   hydrated: boolean
   setHydrated: () => void
   streamingErrorMessage: string
   setStreamingErrorMessage: (streamingErrorMessage: string) => void
-  endpoints: {
-    endpoint: string
-    id__endpoint: string
-  }[]
-  setEndpoints: (
-    endpoints: {
-      endpoint: string
-      id__endpoint: string
-    }[]
-  ) => void
   isStreaming: boolean
   setIsStreaming: (isStreaming: boolean) => void
   isEndpointActive: boolean
@@ -35,9 +27,6 @@ interface Store {
   ) => void
   chatInputRef: React.RefObject<HTMLTextAreaElement | null>
   selectedEndpoint: string
-  setSelectedEndpoint: (selectedEndpoint: string) => void
-  authToken: string
-  setAuthToken: (authToken: string) => void
   agents: AgentDetails[]
   setAgents: (agents: AgentDetails[]) => void
   teams: TeamDetails[]
@@ -64,8 +53,6 @@ export const useStore = create<Store>()(
       streamingErrorMessage: '',
       setStreamingErrorMessage: (streamingErrorMessage) =>
         set(() => ({ streamingErrorMessage })),
-      endpoints: [],
-      setEndpoints: (endpoints) => set(() => ({ endpoints })),
       isStreaming: false,
       setIsStreaming: (isStreaming) => set(() => ({ isStreaming })),
       isEndpointActive: false,
@@ -81,11 +68,7 @@ export const useStore = create<Store>()(
             typeof messages === 'function' ? messages(state.messages) : messages
         })),
       chatInputRef: { current: null },
-      selectedEndpoint: 'http://localhost:7777',
-      setSelectedEndpoint: (selectedEndpoint) =>
-        set(() => ({ selectedEndpoint })),
-      authToken: '',
-      setAuthToken: (authToken) => set(() => ({ authToken })),
+      selectedEndpoint: API_URL,
       agents: [],
       setAgents: (agents) => set({ agents }),
       teams: [],
@@ -109,9 +92,7 @@ export const useStore = create<Store>()(
     {
       name: 'endpoint-storage',
       storage: createJSONStorage(() => localStorage),
-      partialize: (state) => ({
-        selectedEndpoint: state.selectedEndpoint
-      }),
+      partialize: () => ({}),
       onRehydrateStorage: () => (state) => {
         state?.setHydrated?.()
       }

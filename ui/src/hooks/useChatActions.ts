@@ -10,7 +10,6 @@ import { useQueryState } from 'nuqs'
 const useChatActions = () => {
   const { chatInputRef } = useStore()
   const selectedEndpoint = useStore((state) => state.selectedEndpoint)
-  const authToken = useStore((state) => state.authToken)
   const [, setSessionId] = useQueryState('session')
   const setMessages = useStore((state) => state.setMessages)
   const setIsEndpointActive = useStore((state) => state.setIsEndpointActive)
@@ -25,32 +24,32 @@ const useChatActions = () => {
 
   const getStatus = useCallback(async () => {
     try {
-      const status = await getStatusAPI(selectedEndpoint, authToken)
+      const status = await getStatusAPI(selectedEndpoint)
       return status
     } catch {
       return 503
     }
-  }, [selectedEndpoint, authToken])
+  }, [selectedEndpoint])
 
   const getAgents = useCallback(async () => {
     try {
-      const agents = await getAgentsAPI(selectedEndpoint, authToken)
+      const agents = await getAgentsAPI(selectedEndpoint)
       return agents
     } catch {
       toast.error('Error fetching agents')
       return []
     }
-  }, [selectedEndpoint, authToken])
+  }, [selectedEndpoint])
 
   const getTeams = useCallback(async () => {
     try {
-      const teams = await getTeamsAPI(selectedEndpoint, authToken)
+      const teams = await getTeamsAPI(selectedEndpoint)
       return teams
     } catch {
       toast.error('Error fetching teams')
       return []
     }
-  }, [selectedEndpoint, authToken])
+  }, [selectedEndpoint])
 
   const clearChat = useCallback(() => {
     setMessages([])

@@ -1,70 +1,96 @@
-# FranLab Agno — Personal AI Agent
+# MOPS Knowledge Lab
 
-Personal AI assistant running on LXC 114 (192.168.1.61) in the FranLab Proxmox home server.
+Unified knowledge assistant for the MOPS team. Combines RAG-powered knowledge retrieval over MOPS docs and SQL playbooks with SQL execution against Redshift.
 
 ## Stack
 
 | Component | Detail |
 |-----------|--------|
-| Framework | [Agno](https://github.com/agno-agi/agno) 2.5.17 |
+| Framework | [Agno](https://github.com/agno-agi/agno) 2.5+ |
+| LLM | Claude via AWS Bedrock |
 | API | FastAPI on `:7777` (`agents.py`) |
-| UI | Next.js `agent-ui` on `:3000` (`/opt/agno-ui/`) |
-| Models | Qwen 2.5 7B + Phi4 Mini 3.8B via Ollama (Mac Mini 192.168.1.246) |
+| UI | Next.js on `:3000` (`ui/`) |
 | Embedder | `nomic-embed-text` via Ollama (768 dim) |
 | Vector DB | LanceDB (local file) |
-| Memory DB | SQLite (`data/agno.db`) — sessions + user memories |
+| Session DB | SQLite (`data/mops.db`) |
 
 ## Agents
 
-- **qwen-7b** — full toolset: RAG search, user memory, session persistence
-- **phi4-mini** — fast casual chat, no tools (model too small for reliable tool use)
+| Agent | Purpose | Tools |
+|-------|---------|-------|
+| **MOPS Assistant** | General knowledge hub, orchestrator | PlaybookSearch, SQLExecution |
+| **SQL Archivist** | Read-only playbook retrieval, duplicate detection | PlaybookSearch, SQLComparison |
+| **SQL Executor** | Run SQL against Redshift, export CSV | SQLExecution |
+| **SQL Librarian** | Transform raw SQL into structured playbook entries | PlaybookWrite, PlaybookSearch, SQLComparison |
 
 ## Setup
 
 ```bash
-# 1. Create venv and install deps
-python3 -m venv venv
-source venv/bin/activate
-pip install agno fastapi uvicorn python-dotenv lancedb tantivy sqlalchemy aiosqlite
+# 1. Install Python dependencies
+pip install -r requirements.txt
 
-# 2. Copy env file
+# 2. Copy and configure env
 cp .env.example .env
-# Edit .env — set OLLAMA_HOST and optionally ANTHROPIC_API_KEY
+# Edit .env — set AWS credentials, Redshift credentials, Ollama host
 
 # 3. Index knowledge base
-mkdir -p knowledge lancedb data
-# Drop .md files into knowledge/
-python3 reindex.py
+mkdir -p knowledge data
+# Place .md/.txt files in knowledge/ for general MOPS docs
+python reindex.py          # incremental
+python reindex.py --fresh  # full rebuild
 
 # 4. Start API
-python3 agents.py
+python agents.py
+# → http://localhost:7777
 
 # 5. Start UI (separate terminal)
-cd /opt/agno-ui
+cd ui
 pnpm install
-pnpm build
-pnpm start
-```
-
-## Knowledge Base
-
-Drop `.md` or `.txt` files into `knowledge/` then re-index:
-
-```bash
-python3 reindex.py          # incremental
-python3 reindex.py --fresh  # full rebuild
-```
-
-## Services (systemd)
-
-```
-agno-api.service  — FastAPI API on :7777
-agno-ui.service   — Next.js UI on :3000
+pnpm dev
+# → http://localhost:3000
 ```
 
 ## Environment Variables
 
+See `.env.example` for all variables. Key ones:
+
 ```env
-OLLAMA_HOST=http://192.168.1.246:11434
-ANTHROPIC_API_KEY=          # optional — enables Claude Sonnet agent
+# AWS Bedrock (required)
+AWS_REGION=us-west-2
+AWS_ACCESS_KEY_ID=
+AWS_SECRET_ACCESS_KEY=
+BEDROCK_MODEL_ID=us.anthropic.claude-sonnet-4-20250514-v1:0
+
+# Embedder (required for RAG)
+OLLAMA_HOST=http://localhost:11434
+
+# Redshift (required for SQL Executor)
+REDSHIFT_HOST=redshift.atlas.c2fo.io
+REDSHIFT_PORT=5439
+REDSHIFT_DB=atlas
+REDSHIFT_USER=
+REDSHIFT_PASSWORD=
+
+# Paths
+PLAYBOOKS_DIR=../engines/sql-librarian-engine-v1/playbooks
+LIBRARIAN_ENGINE_DIR=../engines/sql-librarian-engine-v1
+```
+
+## Knowledge Indexing
+
+The `reindex.py` script indexes two sources into the RAG vector store:
+
+1. **Playbook corpus** — `playbook.md`, `playbook.json`, `documented.sql` per slug from the SQL Librarian Engine
+2. **General knowledge** — `.md` and `.txt` files in `knowledge/`
+
+```bash
+python reindex.py          # incremental (skip existing)
+python reindex.py --fresh  # wipe and rebuild
+```
+
+## Tests
+
+```bash
+cd mops-bot-knowledge-lab
+python -m pytest tests/ -v
 ```

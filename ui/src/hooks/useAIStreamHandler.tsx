@@ -18,7 +18,6 @@ const useAIChatStreamHandler = () => {
   const [teamId] = useQueryState('team')
   const [sessionId, setSessionId] = useQueryState('session')
   const selectedEndpoint = useStore((state) => state.selectedEndpoint)
-  const authToken = useStore((state) => state.authToken)
   const mode = useStore((state) => state.mode)
   const setStreamingErrorMessage = useStore(
     (state) => state.setStreamingErrorMessage
@@ -163,15 +162,9 @@ const useAIChatStreamHandler = () => {
         formData.append('stream', 'true')
         formData.append('session_id', sessionId ?? '')
 
-        // Create headers with auth token if available
-        const headers: Record<string, string> = {}
-        if (authToken) {
-          headers['Authorization'] = `Bearer ${authToken}`
-        }
-
         await streamResponse({
           apiUrl: RunUrl,
-          headers,
+          headers: {},
           requestBody: formData,
           onChunk: (chunk: RunResponse) => {
             if (
@@ -432,7 +425,6 @@ const useAIChatStreamHandler = () => {
       addMessage,
       updateMessagesWithErrorState,
       selectedEndpoint,
-      authToken,
       streamResponse,
       agentId,
       teamId,

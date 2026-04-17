@@ -1,16 +1,18 @@
+# agents.py — MOPS Knowledge Lab backend
 import os
 import json
 import dataclasses
 from typing import Optional, Any
+from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv("/opt/agno/.env")
+load_dotenv()
 
 from fastapi import FastAPI, Form, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from agno.agent import Agent
-from agno.models.ollama import Ollama
+from agno.models.aws import Claude
 from agno.knowledge.knowledge import Knowledge
 from agno.knowledge.embedder.ollama import OllamaEmbedder
 from agno.vectordb.lancedb.lance_db import LanceDb
@@ -18,13 +20,30 @@ from agno.db.sqlite import SqliteDb
 from agno.db.base import SessionType
 from agno.memory.manager import MemoryManager
 
+from toolkits import PlaybookSearchTools, SQLExecutionTools, SQLComparisonTools, PlaybookWriteTools
+
 # ── Config ─────────────────────────────────────────────────────────────────────
-_OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://192.168.1.246:11434")
-_ANTHROPIC_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+_BEDROCK_MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "us.anthropic.claude-sonnet-4-20250514-v1:0")
+_AWS_REGION = os.getenv("AWS_REGION", "us-west-2")
+_OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+_USER_ID = os.getenv("USER_ID", "mops")
+
+_SQLITE_DB = os.getenv("SQLITE_DB", "./data/mops.db")
+_LANCEDB_URI = os.getenv("LANCEDB_URI", "./data/lancedb")
+_PLAYBOOKS_DIR = os.getenv("PLAYBOOKS_DIR", "../engines/sql-librarian-engine-v1/playbooks")
+_LIBRARIAN_ENGINE_DIR = os.getenv("LIBRARIAN_ENGINE_DIR", "../engines/sql-librarian-engine-v1")
+_KNOWLEDGE_DIR = os.getenv("KNOWLEDGE_DIR", "./knowledge")
+_RESULTS_DIR = os.getenv("RESULTS_DIR", "./data/results")
 _DB_ID = "local"
 
+# Ensure data directory exists
+Path(_SQLITE_DB).parent.mkdir(parents=True, exist_ok=True)
+
+# ── Model ────────────────────────────────────────────────────────────────────
+_model = Claude(id=_BEDROCK_MODEL_ID, aws_region=_AWS_REGION)
+
 # ── Persistent DB (sessions + memories) ───────────────────────────────────────
-_db = SqliteDb(db_file="/opt/agno/data/agno.db")
+_db = SqliteDb(db_file=_SQLITE_DB)
 
 # ── Knowledge base (RAG — LanceDB + nomic-embed-text) ─────────────────────────
 _embedder = OllamaEmbedder(
@@ -33,43 +52,78 @@ _embedder = OllamaEmbedder(
     dimensions=768,
 )
 _vdb = LanceDb(
-    uri="/opt/agno/lancedb",
-    table_name="franlab_knowledge",
+    uri=_LANCEDB_URI,
+    table_name="mops_knowledge",
     embedder=_embedder,
 )
 _knowledge = Knowledge(vector_db=_vdb, max_results=20)
 
-_INSTRUCTIONS = [
-    "The user's name is Fran.",
-    "Fran lives in Weston-super-Mare, UK.",
-    "Fran runs a Proxmox home server at 192.168.1.150 called 'fran'.",
-    "All FranLab services are on the 192.168.1.x LAN and accessible via *.franlab.uk subdomains.",
-    "When asked about a service, URL, or anything lab-related, search your knowledge base first.",
-    "You have persistent memory — remember facts Fran tells you across conversations.",
-    "Be concise and direct.",
-    "When you store a memory, you MUST call the memory tool first. Only confirm it is saved AFTER the tool call succeeds. Never say you have saved something unless the tool call has already completed.",
-    "If you cannot save a memory (tool unavailable or failed), say so honestly. Do not pretend to save.",
+# ── Toolkits ──────────────────────────────────────────────────────────────────
+_search_tools = PlaybookSearchTools(playbooks_dir=_PLAYBOOKS_DIR)
+_exec_tools = SQLExecutionTools(playbooks_dir=_PLAYBOOKS_DIR, results_dir=_RESULTS_DIR)
+_compare_tools = SQLComparisonTools(playbooks_dir=_PLAYBOOKS_DIR)
+_write_tools = PlaybookWriteTools(engine_dir=_LIBRARIAN_ENGINE_DIR, playbooks_dir=_PLAYBOOKS_DIR)
+
+# ── Memory manager ────────────────────────────────────────────────────────────
+_memory_manager = MemoryManager(model=_model, db=_db)
+
+# ── Agent instructions ────────────────────────────────────────────────────────
+_ORCHESTRATOR_INSTRUCTIONS = [
+    "You are the MOPS Assistant — a knowledge hub for the MOPS team.",
+    "Search your knowledge base first when answering questions about MOPS processes, playbooks, or domain topics.",
+    "For playbook lookups, use PlaybookSearchTools: search_index for fast lookup, search_playbooks_deep for detailed field search.",
+    "For SQL execution, use SQLExecutionTools: list_playbooks to help users find scripts, run_query or run_playbook to execute.",
+    "Be concise and direct. Present data as tables when appropriate.",
+    "You have persistent memory — remember facts users tell you across conversations.",
+]
+
+_ARCHIVIST_INSTRUCTIONS = [
+    "You are the SQL Archivist — a read-only retrieval engine for the SQL playbook corpus.",
+    "You decode structured playbook artifacts into answers.",
+    "Before searching, decompose every query into librarian encoding fields: business_question, grain, inputs, outputs, execution_location, purpose, filters, time_window, objects_referenced, ctes.",
+    "Use search_index first (fast). Only use search_playbooks_deep when index results are insufficient.",
+    "Use compare_sql when checking for duplicate scripts.",
+    "You NEVER modify any file. Read-only. Absolute. No exceptions.",
+    "Maximum 5 results for direct search, 3 for script lookup, all above 0.5 for duplicate check.",
+]
+
+_EXECUTOR_INSTRUCTIONS = [
+    "You are the SQL Executor — you run SQL against Redshift and present results.",
+    "Use list_playbooks to help users find the right script.",
+    "Use run_playbook when the user names a specific slug, run_query for raw SQL.",
+    "Use export_csv when the user needs full results downloaded.",
+    "Only SELECT and WITH queries are allowed. Never construct database connections yourself.",
+    "Present results as markdown tables. Be concise.",
+]
+
+_LIBRARIAN_INSTRUCTIONS = [
+    "You are the SQL Librarian Engine — you transform raw SQL scripts into structured playbook entries.",
+    "Given a SQL script, produce 5 artifacts: raw.sql, documented.sql, playbook.md, playbook.json, answers.yaml.",
+    "Use compare_sql first to check for duplicates before documenting.",
+    "Use create_playbook_folder, write_artifact, and update_index to create entries.",
+    "Follow the v1 contract: maximum 3 questions per run, never re-ask resolved questions.",
+    "Preserve SQL logic exactly in documented.sql — no expression changes.",
+    "Generate ALL SQL PLAYBOOK HEADER v1 fields; mark unknown values explicitly.",
+    "If execution_location is unclear, ask. If unanswered, set status to 'blocked'.",
+    "Validate playbook.json against the schema before writing.",
+    "Update INDEX.json after every change.",
 ]
 
 # ── Agents ─────────────────────────────────────────────────────────────────────
 _agents: dict[str, Agent] = {}
 
-_qwen_memory = MemoryManager(
-    model=Ollama(id="qwen2.5:7b-instruct-q4_K_M", host=_OLLAMA_HOST),
-    db=_db,
-)
-
-_agents["qwen-7b"] = Agent(
-    id="qwen-7b",
-    name="Qwen 7B (Local)",
-    model=Ollama(id="qwen2.5:7b-instruct-q4_K_M", host=_OLLAMA_HOST),
-    description="Local Qwen 2.5 7B via Ollama on Mac Mini.",
-    instructions=_INSTRUCTIONS,
+_agents["mops-assistant"] = Agent(
+    id="mops-assistant",
+    name="MOPS Assistant",
+    model=_model,
+    description="MOPS team knowledge assistant — ask about processes, playbooks, run SQL, search docs.",
+    instructions=_ORCHESTRATOR_INSTRUCTIONS,
     knowledge=_knowledge,
     search_knowledge=True,
+    tools=[_search_tools, _exec_tools],
     db=_db,
-    user_id="fran",
-    memory_manager=_qwen_memory,
+    user_id=_USER_ID,
+    memory_manager=_memory_manager,
     enable_agentic_memory=True,
     update_memory_on_run=True,
     enable_user_memories=True,
@@ -77,41 +131,44 @@ _agents["qwen-7b"] = Agent(
     markdown=True,
 )
 
-_agents["phi4-mini"] = Agent(
-    id="phi4-mini",
-    name="Phi4 Mini (Fast)",
-    model=Ollama(id="phi4-mini:3.8b", host=_OLLAMA_HOST),
-    description="Fast local Phi4 Mini via Ollama — best for quick casual queries.",
-    instructions=_INSTRUCTIONS,
+_agents["sql-archivist"] = Agent(
+    id="sql-archivist",
+    name="SQL Archivist",
+    model=_model,
+    description="Search and retrieve SQL playbooks — handles business questions, duplicate detection, script lookups.",
+    instructions=_ARCHIVIST_INSTRUCTIONS,
+    tools=[_search_tools, _compare_tools],
     db=_db,
-    user_id="fran",
+    user_id=_USER_ID,
     add_history_to_context=True,
     markdown=True,
 )
 
-if _ANTHROPIC_KEY and _ANTHROPIC_KEY != "your-key-here":
-    from agno.models.anthropic import Claude
-    _claude_memory = MemoryManager(
-        model=Claude(id="claude-sonnet-4-6"),
-        db=_db,
-    )
-    _agents["claude-sonnet"] = Agent(
-        id="claude-sonnet",
-        name="Claude Sonnet 4.6",
-        model=Claude(id="claude-sonnet-4-6"),
-        description="Anthropic Claude Sonnet 4.6.",
-        instructions=_INSTRUCTIONS,
-        knowledge=_knowledge,
-        search_knowledge=True,
-        db=_db,
-        user_id="fran",
-        memory_manager=_claude_memory,
-        enable_agentic_memory=True,
-        update_memory_on_run=True,
-        enable_user_memories=True,
-        add_history_to_context=True,
-            markdown=True,
-    )
+_agents["sql-executor"] = Agent(
+    id="sql-executor",
+    name="SQL Executor",
+    model=_model,
+    description="Run SQL against Redshift — execute playbook scripts or raw queries, export to CSV.",
+    instructions=_EXECUTOR_INSTRUCTIONS,
+    tools=[_exec_tools],
+    db=_db,
+    user_id=_USER_ID,
+    add_history_to_context=True,
+    markdown=True,
+)
+
+_agents["sql-librarian"] = Agent(
+    id="sql-librarian",
+    name="SQL Librarian",
+    model=_model,
+    description="Transform raw SQL scripts into structured playbook documentation.",
+    instructions=_LIBRARIAN_INSTRUCTIONS,
+    tools=[_write_tools, _search_tools, _compare_tools],
+    db=_db,
+    user_id=_USER_ID,
+    add_history_to_context=True,
+    markdown=True,
+)
 
 # ── Serialiser ─────────────────────────────────────────────────────────────────
 def _safe_json(obj: Any) -> Any:
@@ -128,7 +185,7 @@ def _safe_json(obj: Any) -> Any:
         return str(obj)
 
 # ── App ────────────────────────────────────────────────────────────────────────
-app = FastAPI(title="Agno Playground")
+app = FastAPI(title="MOPS Knowledge Lab")
 
 app.add_middleware(
     CORSMiddleware,
@@ -165,7 +222,7 @@ def get_sessions(
         sessions = _db.get_sessions(
             session_type=session_type,
             component_id=component_id,
-            user_id="fran",
+            user_id=_USER_ID,
             limit=limit,
             page=page,
             deserialize=False,
@@ -176,7 +233,7 @@ def get_sessions(
             data = [_safe_json(s) for s in sessions]
             total = len(data)
         return {"data": data, "meta": {"total": total, "page": page, "limit": limit}}
-    except Exception as e:
+    except Exception:
         return {"data": [], "meta": {"total": 0, "page": 1, "limit": limit}}
 
 @app.get("/sessions/{session_id}/runs")
@@ -190,7 +247,7 @@ def get_session_runs(
         session = _db.get_session(
             session_id=session_id,
             session_type=session_type,
-            user_id="fran",
+            user_id=_USER_ID,
             deserialize=False,
         )
         if not session:

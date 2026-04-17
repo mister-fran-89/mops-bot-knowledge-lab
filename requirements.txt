@@ -6,9 +6,11 @@ lancedb
 tantivy
 sqlalchemy
 aiosqlite
+anthropic
 boto3
 psycopg2-binary
 pandas
 jsonschema
+ollama
 pyyaml
 pytest
